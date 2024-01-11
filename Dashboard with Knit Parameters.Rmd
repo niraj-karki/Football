@@ -1,0 +1,215 @@
+---
+title: "Football Season Dashboard"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: fill
+params:
+  season:
+    label: "season"
+    value: 2010/2011
+    input: select
+    choices: [2008/2009, 2009/2010, 2010/2011, 2011/2012, 2012/2013, 2013/2014, 2014/2015, 2015/2016]
+  league:
+    label: "league:"
+    value: Spain LIGA BBVA
+    input: select
+    choices: [Spain LIGA BBVA, England Premier League]
+  team:
+    label: "team:"
+    value: FC Barcelona, Real Madrid CF, Valencia CF, Atlético Madrid, Villarreal CF
+    input: text
+---
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(lubridate)
+library(tidyverse)
+library(dplyr)
+library(skimr)
+library(stringr)
+library(treemap)
+library(shiny)
+library(plotly)
+```
+
+
+```{r}
+matchesF <- read.csv("~/STA-418-518/Copy/ForShiny.csv")
+seasonalData <- function(a, b){
+  
+  season <- matchesF[matchesF$season == a & (matchesF$League == b),]
+  season['HomePoints'] <- 0
+  season['AwayPoints'] <- 0
+  season['HomePosition'] <- 0
+  season['AwayPosition'] <- 0
+  season['HomeGoals'] <- 0
+  season['AwayGoals'] <- 0
+  
+  Teams <- c(unique(season$HomeTeam))
+  Points <- c(0)
+  GF <- c(0)
+  GA <- c(0)
+  GD <- c(0)
+  Rank <- c(0)
+  Played <- 38
+  df <- data.frame(Rank, Teams, Played, GF, GA, GD, Points)
+  
+  teamPoints <- c()
+  for(i in unique(season$HomeTeam)){
+    teamPoints[i] <- 0
+  }
+  
+  teamGoals <- c()
+  for(i in unique(season$HomeTeam)){
+    teamGoals[i] <- 0
+  }
+  
+  for(i in 1:nrow(season)){
+    if(season$home_team_goal[i] > season$away_team_goal[i]){
+      
+      df[df$Teams == season$HomeTeam[i],]$Points = df[df$Teams == season$HomeTeam[i],]$Points+3
+      
+      teamPoints[season$HomeTeam[i]] = teamPoints[season$HomeTeam[i]] + 3
+      teamPoints[season$AwayTeam[i]] = teamPoints[season$AwayTeam[i]] + 0
+      
+    } else if (season$home_team_goal[i] == season$away_team_goal[i]){
+      df[df$Teams == season$HomeTeam[i],]$Points = df[df$Teams == season$HomeTeam[i],]$Points+1
+      df[df$Teams == season$AwayTeam[i],]$Points = df[df$Teams == season$AwayTeam[i],]$Points+1
+      
+      teamPoints[season$HomeTeam[i]] = teamPoints[season$HomeTeam[i]] + 1
+      teamPoints[season$AwayTeam[i]] = teamPoints[season$AwayTeam[i]] + 1
+      
+    } else {
+      df[df$Teams == season$AwayTeam[i],]$Points = df[df$Teams == season$AwayTeam[i],]$Points+3
+      
+      teamPoints[season$HomeTeam[i]] = teamPoints[season$HomeTeam[i]] + 0
+      teamPoints[season$AwayTeam[i]] = teamPoints[season$AwayTeam[i]] + 3
+      
+    }
+    
+    teamGoals[season$HomeTeam[i]] = teamGoals[season$HomeTeam[i]] + season$home_team_goal[i]
+    teamGoals[season$AwayTeam[i]] = teamGoals[season$AwayTeam[i]] + season$away_team_goal[i]
+    
+    
+    df[df$Teams == season$HomeTeam[i],]$GF = df[df$Teams == season$HomeTeam[i],]$GF+season$home_team_goal[i]
+    df[df$Teams == season$AwayTeam[i],]$GF = df[df$Teams == season$AwayTeam[i],]$GF+season$away_team_goal[i]
+    
+    df[df$Teams == season$HomeTeam[i],]$GA = df[df$Teams == season$HomeTeam[i],]$GA+season$away_team_goal[i]
+    df[df$Teams == season$AwayTeam[i],]$GA = df[df$Teams == season$AwayTeam[i],]$GA+season$home_team_goal[i]
+    
+    df$GD = df$GF - df$GA
+    
+    order.Points <- order(df$Points,  decreasing = TRUE)
+    df$Rank[order.Points] <- 1:nrow(df)
+    season$HomePoints[i] = as.integer(teamPoints[season$HomeTeam[i]])
+    season$AwayPoints[i] = as.integer(teamPoints[season$AwayTeam[i]])
+    season$HomePosition[i] = df[df$Teams == season$HomeTeam[i],]$Rank
+    season$AwayPosition[i] = df[df$Teams == season$AwayTeam[i],]$Rank
+    season$HomeGoals[i] = as.integer(teamGoals[season$HomeTeam[i]])
+    season$AwayGoals[i] = as.integer(teamGoals[season$AwayTeam[i]])
+  }
+  df <- df[order(df$Points, decreasing = TRUE),]
+  rownames(df) <- NULL
+  rownames(season) <- NULL
+  {return(list(SeasonTable=df, SeasonResult=season))}
+}
+
+s <- as.character(params$season)
+l <- as.character(params$league)
+
+SeasonTable <- seasonalData(s, l)$SeasonTable
+SeasonResult <- seasonalData(s, l)$SeasonResult
+
+#SeasonTable <- seasonalData("2010/2011", "Spain LIGA BBVA")$SeasonTable
+
+#SeasonResult <- seasonalData("2010/2011", "Spain LIGA BBVA")$SeasonResult
+
+stagePointsGoals <- function(names){
+  allTeams <- list(names)
+    
+  Team <- c()
+  Points <- c()
+  TotalGoals <- c()
+  Stage <- c()
+  Shots <- c()
+  Goal <- c()
+  df <- data.frame(Team, Points, Stage, TotalGoals, Shots, Goal)
+  
+  for(name in names){
+    subs <- SeasonResult[SeasonResult$HomeTeam == name | SeasonResult$AwayTeam == name,]
+    for (i in 1:nrow(subs)){
+      if (subs$HomeTeam[i] == name){
+        df[nrow(df) + 1,1] <- name
+        df[nrow(df),2] <- subs$HomePoints[i]
+        df[nrow(df),3] <- subs$stage[i]
+        df[nrow(df),4] <- subs$HomeGoals[i]
+        df[nrow(df),5] <- subs$on_target_shot_home_team[i]+subs$off_target_shot_home_team[i]
+        df[nrow(df),6] <- subs$home_team_goal[i]
+        
+      }else if(subs$AwayTeam[i] == name){
+        df[nrow(df) + 1,1] <- name
+        df[nrow(df),2] <- subs$AwayPoints[i]
+        df[nrow(df),3] <- subs$stage[i]
+        df[nrow(df),4] <- subs$AwayGoals[i]
+        df[nrow(df),5] <- subs$on_target_shot_away_team[i]+subs$off_target_shot_away_team[i]
+        df[nrow(df),6] <- subs$away_team_goal[i]
+      }
+    }
+  }
+  colnames(df) <- c("Team", "Points", "Stage", "TotalGoals", "Shots", "Goal")
+  return(df)
+}
+
+#selected <- stagePointsGoals(c("FC Barcelona", "Real Madrid CF", "Valencia CF", "Villarreal CF", "Atlético Madrid"))
+EXP <- as.character(strsplit(params$team, ", ")[[1]])
+#"FC Barcelona", "Real Madrid CF", "Sevilla FC", "RCD Espanyol", "Real Sporting de Gijón"
+selected <- stagePointsGoals(EXP)
+
+
+
+SeasonTable <- SeasonTable[1:5,]
+```
+
+Column {data-width=650}
+-----------------------------------------------------------------------
+
+### Goals Throughout Season for Top and Bottom Teams
+
+```{r}
+lineChart <- ggplot(selected, aes(x=Stage, y=Points, color = Team)) +
+  geom_line() +
+  labs(x = "Stage",
+       y = "Goals")+
+  theme_light()+
+  scale_y_continuous(breaks = seq(0,100,10))+
+  scale_x_continuous(breaks = seq(0,38,2)) +
+  theme(legend.position = "bottom",
+        legend.title = element_text(size = 8),
+        legend.text = element_text(size = 7))
+
+ggplotly(lineChart)
+```
+
+Column {data-width=350}
+-----------------------------------------------------------------------
+
+### Chart B
+
+```{r}
+bar <- SeasonResult %>% count(FullTimeResult) %>% ggplot(aes(x = fct_reorder(FullTimeResult, -n),
+                                           y = n))+
+  geom_col(fill = "#3D195B", color = "black")+
+  labs(title = "Match Result for the Season",
+       x = "Result",
+       y = "Number of Wins")+
+  theme_bw()
+bar
+```
+
+### Top 5 teams in the League
+
+```{r}
+SeasonTable %>% flextable::flextable()
+```
+

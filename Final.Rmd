@@ -1,0 +1,834 @@
+---
+title: "Final Project"
+author: "Niraj Karki"
+date: "2022-12-11"
+output: html_document
+---
+
+# Importing Libraries
+
+```{r}
+library(lubridate)
+library(tidyverse)
+library(dplyr)
+library(skimr)
+library(stringr)
+library(treemap)
+library(plotly)
+library(viridis)
+library(hrbrthemes)
+library(shiny)
+```
+
+
+```{r}
+# Importing csv files needed for the project
+
+epl <- read.csv("epl1.csv")
+laliga <- read.csv("laliga1.csv")
+league <- read.csv("league.csv")
+country <- read.csv("country.csv")
+players <- read.csv("players.csv")
+teamNames <- read.csv("teamnames.csv")
+eplman <- read.csv("EPL MAN.csv")
+laligaman <- read.csv("LaLiga Managers.csv")
+eplref <- read.csv("EplRef.csv")
+laligaref <- read.csv("Laliga Ref.csv")
+```
+
+
+
+
+```{r}
+matches <- rbind(epl, laliga) # Combining data for EPL and LaLiga games together and naming it as matches.
+```
+
+
+```{r}
+# Creating two new variables in the matches dataframe called "Country" and "League".
+matches['Country'] <- NA
+matches['League'] <- NA
+```
+
+```{r}
+# Going through each rows in the data frame to match country and league ID with the names of the country and league and substituting ids with those names in the matches table.
+
+for(i in 1:nrow(matches)){
+    matches$Country[i] = country[country["id"] == matches$country_id[i]][2]
+}
+
+for(i in 1:nrow(matches)){
+    matches$League[i] = league[league["id"] == matches$league_id[i]][3]
+}
+```
+
+```{r}
+# Creating two new variables in the matches dataframe called "HomeTeam" and "AwayTeam".
+
+matches['HomeTeam'] <- NA
+matches['AwayTeam'] <- NA
+```
+
+```{r}
+# Going through each rows in the dataframe to match home and away team ID with the original name of the teams and placing those names in the matches table's HomeTeam and AwayTeam columns.
+
+for(i in 1:nrow(matches)){
+    matches$HomeTeam[i] = teamNames[teamNames["team_api_id"] == matches$home_team_api_id[i]][4]
+}
+
+for(i in 1:nrow(matches)){
+    matches$AwayTeam[i] = teamNames[teamNames["team_api_id"] == matches$away_team_api_id[i]][4]
+}
+```
+
+```{r}
+# To see if there are any missing values in any of the columns.
+
+skim(matches)
+```
+```{r}
+# Summary statistics of the whole data set
+summary(matches)
+glimpse(matches)
+```
+
+```{r}
+# Dropping columns that are not required for our project.
+
+matches <- matches[,-1:-2]
+
+matches <- matches %>% select(-(match_api_id:away_team_api_id))
+
+matches <- matches %>% select(-(goal:BSA))
+
+matches <- matches %>% select(-(home_player_X1:away_player_Y11))
+```
+
+
+
+```{r}
+# Replacing NA values on players id column with a fake id of 222222. We want to replace the NA values in player names with a fake player who has an age, height and weight so that we can substitute those attributes with the average age, height and weight of all players.
+
+matches <- matches %>% 
+    mutate_at(c(6:27), ~replace_na(.,222222))
+```
+
+```{r}
+# Converting the "date" variable in matches data frame and "birthday" variable in players data frame to date type using the Lubridate package
+
+matches <- matches %>%
+  mutate(date = mdy(date))
+
+
+
+players <- players %>%
+  mutate(birthday = ymd(birthday))
+```
+
+```{r}
+# Performing left join operation to get the names of each players in the data frame and removing their player IDs.
+
+nam <- c(names(matches[c(6:27)])) # List of columns from 6th index to 27th.
+for (i in 1:length(nam)){
+  names(matches)[names(matches) == nam[i]] <- "player_api_id" # Changing the name of 6th to 27th column to the same column name so that we can match the column with the column in players data frame. 
+  matches <- matches %>% left_join(players[c("player_api_id", "player_name")], 
+                    by = "player_api_id")
+  names(matches)[names(matches) == "player_name"] <- nam[i] # After a join happens we rename the column back to its original name so that we don't have two columns with same names.
+  matches = subset(matches, select = -c(player_api_id) ) # Removing the column which had the player's id, we just need their names
+}
+```
+
+```{r}
+matchesF <- matches # I did the next part separately in a different file using the data frame named 'matchesF' so we don't need to change the names in all places
+```
+
+```{r}
+# To merge the matchesF table with the managers and referees of each league, we need a column that matches on all tables. The team names in some tables use a deprecated form of their full name so I renamed all the Team names so they matched everywhere.
+
+
+eplref$Home <- str_replace(eplref$Home, "Tottenham", "Tottenham Hotspur")
+eplref$Home <- str_replace(eplref$Home, "Newcastle", "Newcastle United")
+eplref$Home <- str_replace(eplref$Home, "West Ham", "West Ham United")
+eplref$Home <- str_replace(eplref$Home, "Swansea", "Swansea City")
+eplref$Home <- str_replace(eplref$Home, "Wigan", "Wigan Athletic")
+eplref$Home <- str_replace(eplref$Home, "Norwich", "Norwich City")
+eplref$Home <- str_replace(eplref$Home, "Wolverhampton", "Wolverhampton Wanderers")
+eplref$Home <- str_replace(eplref$Home, "Birmingham", "Birmingham City")
+eplref$Home <- str_replace(eplref$Home, "Leicester", "Leicester City")
+eplref$Home <- str_replace(eplref$Home, "Cardiff", "Cardiff City")
+
+eplref$Away <- str_replace(eplref$Away, "Tottenham", "Tottenham Hotspur")
+eplref$Away <- str_replace(eplref$Away, "Newcastle", "Newcastle United")
+eplref$Away <- str_replace(eplref$Away, "West Ham", "West Ham United")
+eplref$Away <- str_replace(eplref$Away, "Swansea", "Swansea City")
+eplref$Away <- str_replace(eplref$Away, "Wigan", "Wigan Athletic")
+eplref$Away <- str_replace(eplref$Away, "Norwich", "Norwich City")
+eplref$Away <- str_replace(eplref$Away, "Wolverhampton", "Wolverhampton Wanderers")
+eplref$Away <- str_replace(eplref$Away, "Birmingham", "Birmingham City")
+eplref$Away <- str_replace(eplref$Away, "Leicester", "Leicester City")
+eplref$Away <- str_replace(eplref$Away, "Cardiff", "Cardiff City")
+```
+
+```{r}
+laligaref$Home <- str_replace(laligaref$Home, "Real Madrid", "Real Madrid CF")
+laligaref$Home <- str_replace(laligaref$Home, "Barcelona", "FC Barcelona")
+laligaref$Home <- str_replace(laligaref$Home, "Málaga", "Málaga CF")
+laligaref$Home <- str_replace(laligaref$Home, "Valencia", "Valencia CF")
+laligaref$Home <- str_replace(laligaref$Home, "Atlético de Madrid", "Atlético Madrid")
+laligaref$Home <- str_replace(laligaref$Home, "Getafe", "Getafe CF")
+laligaref$Home <- str_replace(laligaref$Home, "Sevilla", "Sevilla FC")
+laligaref$Home <- str_replace(laligaref$Home, "Espanyol", "RCD Espanyol")
+laligaref$Home <- str_replace(laligaref$Home, "Athletic Club", "Athletic Club de Bilbao")
+laligaref$Home <- str_replace(laligaref$Home, "Villarreal", "Villarreal CF")
+
+laligaref$Home <- str_replace(laligaref$Home, "Osasuna", "CA Osasuna")
+laligaref$Home <- str_replace(laligaref$Home, "Deportivo de La Coruña", "RC Deportivo de La Coruña")
+laligaref$Home <- str_replace(laligaref$Home, "Levante", "Levante UD")
+laligaref$Home <- str_replace(laligaref$Home, "Granada", "Granada CF")
+laligaref$Home <- str_replace(laligaref$Home, "Sporting de Gijón", "Real Sporting de Gijón")
+laligaref$Home <- str_replace(laligaref$Home, "Almería", "UD Almería")
+laligaref$Home <- str_replace(laligaref$Home, "Mallorca", "RCD Mallorca")
+laligaref$Home <- str_replace(laligaref$Home, "Betis", "Real Betis Balompié")
+laligaref$Home <- str_replace(laligaref$Home, "Zaragoza", "Real Zaragoza")
+laligaref$Home <- str_replace(laligaref$Home, "Valladolid", "Real Valladolid")
+
+laligaref$Home <- str_replace(laligaref$Home, "Racing de Santander", "Racing Santander")
+laligaref$Home <- str_replace(laligaref$Home, "Celta de Vigo", "RC Celta de Vigo")
+laligaref$Home <- str_replace(laligaref$Home, "Elche", "Elche CF")
+laligaref$Home <- str_replace(laligaref$Home, "Eibar", "SD Eibar")
+laligaref$Home <- str_replace(laligaref$Home, "Córdoba", "Córdoba CF")
+laligaref$Home <- str_replace(laligaref$Home, "Numancia", "CD Numancia")
+laligaref$Home <- str_replace(laligaref$Home, "Las Palmas", "UD Las Palmas")
+laligaref$Home <- str_replace(laligaref$Home, "Xerez", "Xerez Club Deportivo")
+laligaref$Home <- str_replace(laligaref$Home, "Hércules", "Hércules Club de Fútbol")
+laligaref$Home <- str_replace(laligaref$Home, "Tenerife", "CD Tenerife")
+laligaref$Home <- str_replace(laligaref$Home, "Recreativo de Huelva", "RC Recreativo")
+
+
+
+
+laligaref$Away <- str_replace(laligaref$Away, "Real Madrid", "Real Madrid CF")
+laligaref$Away <- str_replace(laligaref$Away, "Barcelona", "FC Barcelona")
+laligaref$Away <- str_replace(laligaref$Away, "Málaga", "Málaga CF")
+laligaref$Away <- str_replace(laligaref$Away, "Valencia", "Valencia CF")
+laligaref$Away <- str_replace(laligaref$Away, "Atlético de Madrid", "Atlético Madrid")
+laligaref$Away <- str_replace(laligaref$Away, "Getafe", "Getafe CF")
+laligaref$Away <- str_replace(laligaref$Away, "Sevilla", "Sevilla FC")
+laligaref$Away <- str_replace(laligaref$Away, "Espanyol", "RCD Espanyol")
+laligaref$Away <- str_replace(laligaref$Away, "Athletic Club", "Athletic Club de Bilbao")
+laligaref$Away <- str_replace(laligaref$Away, "Villarreal", "Villarreal CF")
+
+laligaref$Away <- str_replace(laligaref$Away, "Osasuna", "CA Osasuna")
+laligaref$Away <- str_replace(laligaref$Away, "Deportivo de La Coruña", "RC Deportivo de La Coruña")
+laligaref$Away <- str_replace(laligaref$Away, "Levante", "Levante UD")
+laligaref$Away <- str_replace(laligaref$Away, "Granada", "Granada CF")
+laligaref$Away <- str_replace(laligaref$Away, "Sporting de Gijón", "Real Sporting de Gijón")
+laligaref$Away <- str_replace(laligaref$Away, "Almería", "UD Almería")
+laligaref$Away <- str_replace(laligaref$Away, "Mallorca", "RCD Mallorca")
+laligaref$Away <- str_replace(laligaref$Away, "Betis", "Real Betis Balompié")
+laligaref$Away <- str_replace(laligaref$Away, "Zaragoza", "Real Zaragoza")
+laligaref$Away <- str_replace(laligaref$Away, "Valladolid", "Real Valladolid")
+
+laligaref$Away <- str_replace(laligaref$Away, "Racing de Santander", "Racing Santander")
+laligaref$Away <- str_replace(laligaref$Away, "Celta de Vigo", "RC Celta de Vigo")
+laligaref$Away <- str_replace(laligaref$Away, "Elche", "Elche CF")
+laligaref$Away <- str_replace(laligaref$Away, "Eibar", "SD Eibar")
+laligaref$Away <- str_replace(laligaref$Away, "Córdoba", "Córdoba CF")
+laligaref$Away <- str_replace(laligaref$Away, "Numancia", "CD Numancia")
+laligaref$Away <- str_replace(laligaref$Away, "Las Palmas", "UD Las Palmas")
+laligaref$Away <- str_replace(laligaref$Away, "Xerez", "Xerez Club Deportivo")
+laligaref$Away <- str_replace(laligaref$Away, "Hércules", "Hércules Club de Fútbol")
+laligaref$Away <- str_replace(laligaref$Away, "Tenerife", "CD Tenerife")
+laligaref$Away <- str_replace(laligaref$Away, "Recreativo de Huelva", "RC Recreativo")
+```
+
+
+```{r}
+laligaman$Team <- str_replace(laligaman$Team, "Real Madrid", "Real Madrid CF")
+laligaman$Team <- str_replace(laligaman$Team, "Barcelona", "FC Barcelona")
+laligaman$Team <- str_replace(laligaman$Team, "Málaga", "Málaga CF")
+laligaman$Team <- str_replace(laligaman$Team, "Valencia", "Valencia CF")
+laligaman$Team <- str_replace(laligaman$Team, "Atlético Madrid", "Atlético Madrid")
+laligaman$Team <- str_replace(laligaman$Team, "Getafe", "Getafe CF")
+laligaman$Team <- str_replace(laligaman$Team, "Sevilla", "Sevilla FC")
+laligaman$Team <- str_replace(laligaman$Team, "Espanyol", "RCD Espanyol")
+laligaman$Team <- str_replace(laligaman$Team, "Athletic Bilbao", "Athletic Club de Bilbao")
+laligaman$Team <- str_replace(laligaman$Team, "Villarreal", "Villarreal CF")
+laligaman$Team <- str_replace(laligaman$Team, "Osasuna", "CA Osasuna")
+
+laligaman$Team <- str_replace(laligaman$Team, "Levante", "Levante UD")
+laligaman$Team <- str_replace(laligaman$Team, "Granada", "Granada CF")
+laligaman$Team <- str_replace(laligaman$Team, "Almería", "UD Almería")
+laligaman$Team <- str_replace(laligaman$Team, "Mallorca", "RCD Mallorca")
+laligaman$Team <- str_replace(laligaman$Team, "Zaragoza", "Real Zaragoza")
+laligaman$Team <- str_replace(laligaman$Team, "Valladolid", "Real Valladolid")
+
+laligaman$Team <- str_replace(laligaman$Team, "Racing Santander", "Racing Santander")
+laligaman$Team <- str_replace(laligaman$Team, "Elche", "Elche CF")
+laligaman$Team <- str_replace(laligaman$Team, "Eibar", "SD Eibar")
+laligaman$Team <- str_replace(laligaman$Team, "Córdoba", "Córdoba CF")
+laligaman$Team <- str_replace(laligaman$Team, "Numancia", "CD Numancia")
+laligaman$Team <- str_replace(laligaman$Team, "Las Palmas", "UD Las Palmas")
+laligaman$Team <- str_replace(laligaman$Team, "Xerez", "Xerez Club Deportivo")
+laligaman$Team <- str_replace(laligaman$Team, "Hércules", "Hércules Club de Fútbol")
+laligaman$Team <- str_replace(laligaman$Team, "Tenerife", "CD Tenerife")
+laligaman$Team <- str_replace(laligaman$Team, "Recreativo", "RC Recreativo")
+```
+
+```{r}
+# Merging our Matches Data with the Manager's Data of England Premier League to get Home manager for each match
+
+matchesF <- matchesF %>% left_join(eplman,
+                         by = c(
+                           "season"="Season",
+                           "HomeTeam"="Team"))
+colnames(matchesF)[which(names(matchesF) == "Manager")] <- "HomeManager"
+```
+
+```{r}
+# Merging our Matches Data with the Manager's Data of England Premier League (EPL) to get Away manager for each match
+ 
+matchesF <- matchesF %>% left_join(eplman,
+                         by = c(
+                           "season"="Season",
+                           "AwayTeam"="Team"))
+colnames(matchesF)[which(names(matchesF) == "Manager")] <- "AwayManager"
+```
+
+```{r}
+# Merging our Matches Data with the Manager's Data of Spain LIGA BBVA (LaLiga) to get Home manager for each match
+
+matchesF <- matchesF %>% left_join(laligaman,
+                         by = c(
+                           "season"="Season",
+                           "HomeTeam"="Team"))
+
+
+# When we added the Home managers for EPL, there were missing values in that column for LaLiga games. So instead of having two columns for Home Managers (One for each league), we add LaLiga's Home Managers to the same column replacing the NAs from the new column "Manager" which was created using the above left_join.
+
+matchesF[is.na(matchesF)] <- ""
+matchesF$HomeManager <- str_c(matchesF$HomeManager,"", matchesF$Manager)
+matchesF = subset(matchesF, select = -c(Manager) ) # Removing the Manager column that was created from the left_join
+```
+
+
+
+```{r}
+# Merging our Matches Data with the Manager's Data of Spain LIGA BBVA (LaLiga) to get Away manager for each match
+
+matchesF <- matchesF %>% left_join(laligaman,
+                         by = c(
+                           "season"="Season",
+                           "AwayTeam"="Team"))
+
+# Same thing as for the Home Managers.
+
+matchesF[is.na(matchesF)] <- ""
+matchesF$AwayManager <- str_c(matchesF$AwayManager,"", matchesF$Manager)
+matchesF = subset(matchesF, select = -c(Manager) )
+```
+
+```{r}
+# Converting the date column into the same type to merge the matches table with the referee dataset for EPL and LaLiga.
+
+matchesF <- matchesF %>%
+  mutate(date = ymd(date))
+
+eplref <- eplref %>%
+  mutate(Date = dmy(Date))
+
+laligaref <- laligaref %>%
+  mutate(Date = dmy(Date))
+```
+
+```{r}
+# Merging our Matches Data with the Referee's Data to get the name of the official for each match (EPL)
+
+matchesF <- matchesF %>% left_join(eplref,
+                         by = c(
+                           "date"="Date",
+                           "HomeTeam"="Home",
+                           "AwayTeam"="Away"))
+colnames(matchesF)[which(names(matchesF) == "Referee")] <- "Ref" # Renaming the "Referee" column to "Ref"
+```
+
+```{r}
+# Merging our Matches Data with the Referee's Data to get the name of the official for each match (LaLiga)
+
+matchesF <- matchesF %>% left_join(laligaref,
+                         by = c(
+                           "date"="Date",
+                           "HomeTeam"="Home",
+                           "AwayTeam"="Away"))
+```
+
+```{r}
+# Replacing the missing referee values in the Ref column (with EPL Refs) with LaLiga Refs.
+
+matchesF[is.na(matchesF)] <- ""
+matchesF$Ref <- str_c(matchesF$Ref,"", matchesF$Referee)
+matchesF = subset(matchesF, select = -c(Referee))
+```
+
+
+```{r}
+matchesF <- matchesF %>% 
+  dplyr::arrange(date) # Ordering the matches table in ascending order.
+```
+
+```{r}
+# Creating new column called "FullTimeResult" which either stores which team won or draw. This is done by comparing home and away team goals for each game.
+
+matchesF["FullTimeResult"] = NA
+
+for (i in 1:nrow(matchesF)){
+  if(matchesF$home_team_goal[i] > matchesF$away_team_goal[i]){
+    matchesF$FullTimeResult[i] = "Home Team"
+  }else if(matchesF$home_team_goal[i] == matchesF$away_team_goal[i]){
+    matchesF$FullTimeResult[i] = "Draw"
+  }else{
+    matchesF$FullTimeResult[i] = "Away Team"
+  }
+}
+
+```
+
+```{r}
+# Grouping the data by season and looking at how many goals were scored in each of those seasons in each league.
+
+goalsPerSeason <- matchesF %>% group_by(season, League) %>% 
+  summarize(Goals = sum(home_team_goal+away_team_goal, na.rm = T))
+goalsPerSeason
+
+# Visualizing the same information with a Grouped Bar Chart
+goalsPerSeason %>% ggplot(aes(fill=League, y=Goals, x=season)) + 
+  geom_bar(position="dodge", stat="identity")+
+  labs(title = "Number of Goals throughout each Seasons in each League")+
+  coord_flip()+
+  scale_fill_viridis(discrete = T)+
+  theme(legend.position="bottom")
+```
+```{r}
+# Grouping the data by Referees to look at who gave the most red cards in all games throughout all seasons.
+
+redPerSeason <- matchesF %>% group_by(season, League) %>% 
+  summarize(Reds = sum(red_card_home_team+red_card_away_team, na.rm = T))
+redPerSeason
+
+# Visualizing the same information with a Grouped Bar Chart
+redPerSeason %>% ggplot(aes(y=Reds, x=season, fill = League)) + 
+  geom_bar(position="dodge", stat="identity")+
+  labs(title = "Number of Red Cards throughout each Seasons",
+       x = "Seasons",
+       y = "Number of Red Cards")+
+  coord_flip()+
+  scale_fill_viridis(discrete = T)+
+  theme(legend.position="bottom")
+```
+
+```{r}
+# Function to get two data frames with the season statistics.
+
+seasonalData <- function(a, b){ # a is the season and b is the League name
+  
+  season <- matchesF[matchesF$season == a & (matchesF$League == b),] # Filtering the matches data set with the passed parameters and storing the resulting table as "season" and creating some more columns that we seek to get. This table will have all the match level information.
+  season['HomePoints'] <- 0
+  season['AwayPoints'] <- 0
+  season['HomePosition'] <- 0
+  season['AwayPosition'] <- 0
+  season['HomeGoalsFor'] <- 0
+  season['AwayGoalsFor'] <- 0
+  season['HomeGoalsAgainst'] <- 0
+  season['AwayGoalsAgainst'] <- 0
+  
+  Teams <- c(unique(season$HomeTeam))
+  Points <- c(0)
+  GF <- c(0)
+  GA <- c(0)
+  GD <- c(0)
+  Rank <- c(0)
+  Played <- 38
+  df <- data.frame(Rank, Teams, Played, GF, GA, GD, Points) #Creating a new data frame that will hold the high level data, i.e, the overall data of the season for each team like how many points each team got, how many goals each scored.
+  
+  teamPoints <- c()
+  for(i in unique(season$HomeTeam)){
+    teamPoints[i] <- 0
+  } # creating a dictionary like object to hold the points for each team for the season. Initial value is 0
+  
+  teamGoalsfor <- c()
+  for(i in unique(season$HomeTeam)){
+    teamGoalsfor[i] <- 0
+  } # creating a dictionary like object to hold the goals each team scored in the season. Initial value is 0
+  
+  teamGoalsagainst <- c()
+  for(i in unique(season$HomeTeam)){
+    teamGoalsagainst[i] <- 0
+  } # creating a dictionary like object to hold the goals each team conceded in the season. Initial value is 0
+  
+  for(i in 1:nrow(season)){ # Going through each games to see which teams won. 
+    if(season$home_team_goal[i] > season$away_team_goal[i]){
+      
+      df[df$Teams == season$HomeTeam[i],]$Points = df[df$Teams == season$HomeTeam[i],]$Points+3 # Updating the points on the "df" dataframe. Each win gives 3 points. 
+      
+      teamPoints[season$HomeTeam[i]] = teamPoints[season$HomeTeam[i]] + 3 # Updating the points to the dictionary which we will later store in the seasons table. this is needed to get match by match points throughout the season to get a line chart.
+      teamPoints[season$AwayTeam[i]] = teamPoints[season$AwayTeam[i]] + 0
+      
+    } else if (season$home_team_goal[i] == season$away_team_goal[i]){ # In case of a draw, we add 1 point to each team
+      df[df$Teams == season$HomeTeam[i],]$Points = df[df$Teams == season$HomeTeam[i],]$Points+1 
+      df[df$Teams == season$AwayTeam[i],]$Points = df[df$Teams == season$AwayTeam[i],]$Points+1
+      
+      teamPoints[season$HomeTeam[i]] = teamPoints[season$HomeTeam[i]] + 1 
+      teamPoints[season$AwayTeam[i]] = teamPoints[season$AwayTeam[i]] + 1
+      
+    } else { # Now the away team gets 3 poi
+      df[df$Teams == season$AwayTeam[i],]$Points = df[df$Teams == season$AwayTeam[i],]$Points+3
+      
+      teamPoints[season$HomeTeam[i]] = teamPoints[season$HomeTeam[i]] + 0
+      teamPoints[season$AwayTeam[i]] = teamPoints[season$AwayTeam[i]] + 3
+      
+    }
+    #Updating the goals for the team to the dictionary which we will later store in the seasons table.
+    teamGoalsfor[season$HomeTeam[i]] = teamGoalsfor[season$HomeTeam[i]] + season$home_team_goal[i] 
+    teamGoalsfor[season$AwayTeam[i]] = teamGoalsfor[season$AwayTeam[i]] + season$away_team_goal[i]
+    #Updating the goals against the team to the dictionary which we will later store in the seasons table.
+    teamGoalsagainst[season$HomeTeam[i]] = teamGoalsagainst[season$HomeTeam[i]] + season$away_team_goal[i]
+    teamGoalsagainst[season$AwayTeam[i]] = teamGoalsagainst[season$AwayTeam[i]] + season$home_team_goal[i]
+    
+    # Storing how many goals the Home and away teams scored so far in the season in the df dataframe.
+    df[df$Teams == season$HomeTeam[i],]$GF = df[df$Teams == season$HomeTeam[i],]$GF+season$home_team_goal[i]
+    df[df$Teams == season$AwayTeam[i],]$GF = df[df$Teams == season$AwayTeam[i],]$GF+season$away_team_goal[i]
+    # Storing how many goals the Home and away teams conceded so far in the season in the df dataframe
+    df[df$Teams == season$HomeTeam[i],]$GA = df[df$Teams == season$HomeTeam[i],]$GA+season$away_team_goal[i]
+    df[df$Teams == season$AwayTeam[i],]$GA = df[df$Teams == season$AwayTeam[i],]$GA+season$home_team_goal[i]
+    # Storing goal difference for each of the team df dataframe
+    df$GD = df$GF - df$GA
+    
+    # Creating a Rank column in "df" that will give ranks based on the the points each team scored 
+    order.Points <- order(df$Points,  decreasing = TRUE)
+    df$Rank[order.Points] <- 1:nrow(df)
+    # Adding all the information in the "seasons" dataframe from the dictionaries.
+    season$HomePoints[i] = as.integer(teamPoints[season$HomeTeam[i]])
+    season$AwayPoints[i] = as.integer(teamPoints[season$AwayTeam[i]])
+    season$HomePosition[i] = df[df$Teams == season$HomeTeam[i],]$Rank
+    season$AwayPosition[i] = df[df$Teams == season$AwayTeam[i],]$Rank
+    season$HomeGoalsFor[i] = as.integer(teamGoalsfor[season$HomeTeam[i]])
+    season$AwayGoalsFor[i] = as.integer(teamGoalsfor[season$AwayTeam[i]])
+    season$HomeGoalsAgainst[i] = as.integer(teamGoalsagainst[season$HomeTeam[i]])
+    season$AwayGoalsAgainst[i] = as.integer(teamGoalsagainst[season$AwayTeam[i]])
+  }
+  df <- df[order(df$Points, decreasing = TRUE),] #Ordering the "df" table based on who has the most points.
+  rownames(df) <- NULL # setting the row names for both dataframes this function gives to NULL.
+  rownames(season) <- NULL
+  {return(list(SeasonTable=df, SeasonResult=season))} # Assigning a proper name to both dataframes and returning those.
+}
+    
+```
+
+```{r}
+SeasonTable <- seasonalData("2010/2011", "Spain LIGA BBVA")$SeasonTable # Getting a season table using the seasonalData function for LaLiga for the season 2010/2011. Since the function returns two tables, we are mentioning which table we want.
+SeasonTable
+SeasonResult <- seasonalData("2010/2011", "Spain LIGA BBVA")$SeasonResult # Getting a season result using the seasonalData function for LaLiga for the season 2010/2011. This includes a match to match information of all the games played in LaLiga in 2010/2011 season.
+
+```
+
+```{r}
+# A bar chart
+SeasonResult %>% count(FullTimeResult) %>% ggplot(aes(x = fct_reorder(FullTimeResult, -n),
+                                           y = n))+
+  geom_col(fill = "#3D195B", color = "black")+
+  labs(title = "Match Result for the Season",
+       x = "Result",
+       y = "Number of Wins")+
+  theme_bw()
+```
+
+```{r}
+# Grouping the data by Referees and looking at how many games they officiated in that season and in that league.
+
+refCount <- SeasonResult %>% group_by(Ref) %>% 
+  summarize(Games = n())
+
+# Grouping the data by Referees and looking at how many red cards they gave that season.
+
+refRed <- SeasonResult %>% group_by(Ref) %>% 
+  summarize(Red = sum(red_card_home_team+red_card_away_team, na.rm = T))
+
+refRed <- refRed %>% left_join(refCount,
+                               by = c("Ref"="Ref"))
+
+# Grouping the data by Referees and looking at how many yellow cards they gave that season.
+refYellow <- SeasonResult %>% group_by(Ref) %>%
+  summarize(Yellow = sum(yellow_card_home_team+yellow_card_away_team, na.rm = T))
+
+# Merging the two tables together
+refRedYellow <- refRed %>% left_join(refYellow,
+                               by = c("Ref"="Ref"))
+
+refRedYellow
+```
+
+
+```{r}
+# Information from the above table in a barchart.
+
+refRedYellow %>% ggplot() +
+  geom_bar(aes(reorder(Ref, Games), Games, fill = Red), color = "black", stat="identity")+
+  scale_fill_gradient(low = "white", high = "darkred")+
+  coord_flip()+
+  theme_minimal()+
+  labs(title = "Games the referees officiated and number of Red Cards",
+       x = "Referee",
+       y = "Number of Games Officiated")+
+  scale_y_continuous(breaks = seq(0,38,2))+
+  theme(legend.position = "bottom")
+
+
+refRedYellow %>% ggplot() +
+  geom_bar(aes(reorder(Ref, Games), Games, fill = Yellow),  color = "black", stat="identity")+
+  scale_fill_gradient(low = "white", high = "yellow")+
+  coord_flip()+
+  theme_minimal()+
+  labs(title = "Games the referees officiated and number of Yellow Cards",
+       x = "Referee",
+       y = "Number of Games Officiated")+
+  scale_y_continuous(breaks = seq(0,38,2))+
+  theme(legend.position = "bottom")
+```
+
+
+
+```{r}
+# Creating two individual box plots that give information on the home and away possession of all team for the season. 
+
+homePossession <- SeasonResult %>% 
+  ggplot()+
+  geom_boxplot(aes(x = reorder(HomeTeam, possession_home_team), fill = HomeTeam, y = possession_home_team))+
+  theme(axis.text.x = element_text(angle = 90))+
+  labs(title = "Relationship between Home Teams and their Possession",
+       x = "Home Teams",
+       y = "Possession")+
+  coord_flip()+
+  theme_bw()+
+  theme(legend.position="none")
+
+ggplotly(homePossession)
+
+awayPossession <- SeasonResult %>% 
+  ggplot()+
+  geom_boxplot(aes(x = reorder(AwayTeam, possession_away_team), fill = AwayTeam, y = possession_away_team))+
+  theme(axis.text.x = element_text(angle = 90))+
+  labs(title = "Relationship between Away Teams and their Possession",
+       x = "Away Teams",
+       y = "Possession")+
+  coord_flip()+
+  theme_bw()+
+  theme(legend.position="none")
+
+ggplotly(awayPossession)
+```
+
+```{r}
+# Tree map that shows what proportion of points each team won. 
+treemap(SeasonTable, index=c("Teams"),vSize="Points", vColor = "GF", palette = "Set3",
+        fontsize.labels=c(8), fontcolor.labels=c("black"), border.col=c("white"))
+```
+
+
+```{r}
+# Grouping Home and Away teams to get how many goals each scored in home and away matches respectively. We then merge them together to get the number of home goals and away goals for each team.
+
+seasonHomeGoals <- SeasonResult %>% group_by(HomeTeam) %>% 
+  summarize(GoalsHome = sum(home_team_goal, na.rm = T))
+
+seasonAwayGoals <- SeasonResult %>% group_by(AwayTeam) %>% 
+  summarize(GoalsAway = sum(away_team_goal, na.rm = T))
+
+seasonGoals <- seasonHomeGoals %>% left_join(seasonAwayGoals,
+                                             by = c("HomeTeam"="AwayTeam"))
+seasonGoals <- seasonGoals %>% 
+  rename("Team" = "HomeTeam")
+seasonGoals
+```
+```{r}
+# The table we got was in a wide form, but to get at stacked bar chart, we need it in a longer format. Hence changing it to a longer format.
+
+seasonGoalsL <- seasonGoals %>% pivot_longer(cols = c("GoalsHome":"GoalsAway"),
+                                             names_to = "Goals",
+                                             values_to = "Count")
+seasonGoalsL
+```
+
+```{r}
+# Visualizing the seasonGoalsL table with a stacked bar chart.
+
+seasonGoalsL %>% ggplot()+
+  geom_bar(aes(reorder(Team, Count), Count, fill=Goals), position="stack", stat="identity")+
+  scale_fill_viridis(discrete = T)+
+  coord_flip()+
+  theme_bw()+
+  labs(title = "Home Goals and Away Goals for Teams in the League for given Season",
+       x = "Teams",
+       y = "Number of Goals")+
+  scale_y_continuous(breaks = seq(0,150,10))+
+  theme(legend.position = "bottom", text = element_text(size = 10))
+```
+
+```{r}
+#creating a function that takes variable amount of parameters. In this case any team that played in the season and league passed in the seasonalData function. 
+stagePointsGoals <- function(names){ 
+  allTeams <- list(names) 
+    
+  Team <- c()
+  Points <- c()
+  TotalGoalsFor <- c()
+  TotalGoalsAgainst <- c()
+  Stage <- c()
+  Shots <- c()
+  Goal <- c()
+  df <- data.frame(Team, Points, Stage, TotalGoalsFor, TotalGoalsAgainst, Shots, Goal) # New data frame called "df"
+  
+  # For each team passed as argument in the function we populate the table one team after another.
+  for(name in names){
+    subs <- SeasonResult[SeasonResult$HomeTeam == name | SeasonResult$AwayTeam == name,] # Selecting games that the team played, Home or Away
+    for (i in 1:nrow(subs)){ #Going through each of those games
+      if (subs$HomeTeam[i] == name){
+        df[nrow(df) + 1,1] <- name
+        df[nrow(df),2] <- subs$HomePoints[i]
+        df[nrow(df),3] <- subs$stage[i]
+        df[nrow(df),4] <- subs$HomeGoalsFor[i]
+        df[nrow(df),5] <- subs$HomeGoalsAgainst[i]
+        df[nrow(df),6] <- subs$on_target_shot_home_team[i]+subs$off_target_shot_home_team[i]
+        df[nrow(df),7] <- subs$home_team_goal[i]
+        
+      }else if(subs$AwayTeam[i] == name){
+        df[nrow(df) + 1,1] <- name
+        df[nrow(df),2] <- subs$AwayPoints[i]
+        df[nrow(df),3] <- subs$stage[i]
+        df[nrow(df),4] <- subs$AwayGoalsFor[i]
+        df[nrow(df),5] <- subs$AwayGoalsAgainst[i]
+        df[nrow(df),6] <- subs$on_target_shot_away_team[i]+subs$off_target_shot_away_team[i]
+        df[nrow(df),7] <- subs$away_team_goal[i]
+      }
+    }
+  }
+  colnames(df) <- c("Team", "Points", "Stage", "TotalGoalsFor", "TotalGoalsAgainst", "Shots", "Goal") #For some reason the variable names changed to random names. Renaming them.
+  return(df)
+  }
+```
+
+```{r}
+# Using the stagePointGoals function we get match by match statistics for each team we passed in the argument.
+
+selected<-stagePointsGoals(c("FC Barcelona", "Real Madrid CF", "Sevilla FC", "RCD Espanyol", "Real Sporting de Gijón"))
+```
+
+
+
+```{r}
+# Using the selected table, creating a line charts for points throughout each stages for each teams.
+
+pointLines <- 
+  selected %>%
+  ggplot()+
+  stat_summary(aes(x = Stage,
+                   y = Points,
+                   group = Team, color = Team),
+               geom = "line", linewidth = 0.5) +
+  labs(title = "Total Points per Stage throughout the season",
+       x = "Stage",
+       y = "Points")+
+  theme_light()+
+  scale_y_continuous(breaks = seq(0,100,10))+
+  scale_x_continuous(breaks = seq(0,38,2))+
+  theme(legend.position = "bottom")
+
+ggplotly(pointLines)
+
+# Using the selected table, creating a line charts for goals scored throughout each stages by each teams.
+goalLines <- selected %>% ggplot() +
+  stat_summary(aes(x = Stage,
+                   y = TotalGoalsFor,
+                   group = Team, color = Team),
+               geom = "line", linewidth = 0.5) +
+  labs(title = "Total Goals per Stage throughout the season",
+       x = "Stage",
+       y = "Goals")+
+  theme_light()+
+  scale_y_continuous(breaks = seq(0,100,10))+
+  scale_x_continuous(breaks = seq(0,38,2))+
+  theme(legend.position = "bottom")
+
+ggplotly(goalLines)
+```
+
+
+```{r}
+# Creating a stacked area chart to get the information on how many goals each team scored throughout the season and also the total goal contribution of those teams in the season.
+
+ggplot(selected, aes(x=Stage, y=TotalGoalsFor, fill=Team))+
+  geom_area(alpha=0.8 , size=.5, colour="white")+
+  labs(title = "Total Goals Scored per Stage throughout the season",
+       x = "Stage",
+       y = "Total Goals For")+
+  scale_fill_viridis(discrete = T)+
+  theme_ipsum()+
+  theme_bw()+
+  scale_y_continuous(breaks = seq(0,500,40))+
+  scale_x_continuous(breaks = seq(0,38,2)) +
+  theme(legend.position = "bottom")
+
+
+# Creating a stacked area chart to get the information on how many goals each team conceded throughout the season and also the total goal contribution of those teams in the season.
+
+ggplot(selected, aes(x=Stage, y=TotalGoalsAgainst, fill=Team))+
+  geom_area(alpha=0.8 , size=.5, colour="white")+
+  labs(title = "Total Goals Conceded per Stage throughout the season",
+       x = "Stage",
+       y = "Total Goals Against")+
+  scale_fill_viridis(discrete = T)+
+  theme_ipsum()+
+  theme_bw()+
+  scale_y_continuous(breaks = seq(0,500,40))+
+  scale_x_continuous(breaks = seq(0,38,2)) +
+  theme(legend.position = "bottom")
+```
+
+```{r}
+SeasonTable <- seasonalData("2010/2011", "England Premier League")$SeasonTable
+SeasonTable
+```
+
+```{r}
+s.choices = c("2008/2009", "2009/2010", "2010/2011", "2011/2012", "2012/2013", "2013/2014", "2014/2015", "2015/2016")
+l.choices = c("Spain LIGA BBVA", "England Premier League")
+ui <- fluidPage(
+ fluidRow(
+ column(4,
+ selectInput("season", "Season:", choices = s.choices)
+ ),
+ column(4,
+ selectInput("league", "League:", choices = l.choices)
+ )
+ ),
+ fluidRow(
+ column(12, tableOutput("table"))
+ ),
+)
+
+
+server <- function(input, output, session) {
+ selected <- reactive(seasonalData(input$season, input$league)$SeasonTable)
+ output$table <- renderTable(selected())
+}
+shinyApp(ui, server)
+```
+
+
+```{r}
+matchesF
+```
+
+```{r}
+format(as.POSIXct("Sep-28-2019 07:54:31 AM UTC", format = "%b%d%Y"))
+```
+
